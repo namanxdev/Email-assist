@@ -70,7 +70,7 @@ Edit `.env` in the repo root (ADK walks up from the agent folder to find it):
 | Variable | Required | Meaning |
 |---|---|---|
 | `GOOGLE_API_KEY` | yes | Gemini API key |
-| `GEMINI_MODEL` | no | Defaults to `gemini-flash-latest` |
+| `GEMINI_MODEL` | no | Defaults to `gemini-3.5-flash-lite` (see decisions.md D-22) |
 | `MS_CLIENT_ID` | yes (unless bearer token) | Application (client) ID from the registration |
 | `MS_TENANT` | no | Defaults to `common` |
 | `USER_TIMEZONE` | no | IANA name used to resolve "yesterday", "tomorrow" (example: `Asia/Kolkata`) |
@@ -156,7 +156,7 @@ README.md  DESIGN.md  decisions.md  scale.md
 - Graph `$search` on personal Microsoft accounts can behave differently from work accounts and may lag behind new mail (index delay).
 - `$search` results are relevance-ordered. We sort by date and apply date ranges client-side, only within the fetched window (max `top` results, Graph caps `$search` at 1000).
 - No attachments (read or send). Bodies are plain text only.
-- Sessions are in-memory, and the agent serves a single user.
+- Sessions are stored locally (`adk web` in ADK 2.x uses SQLite at `mail_agent/.adk/session.db`, gitignored), and the agent serves a single user.
 - ADK's native tool confirmation is an experimental feature; its API may change between ADK releases.
 - No drafts in Outlook: `Mail.ReadWrite` is deliberately not requested, so drafts exist only in the chat.
 

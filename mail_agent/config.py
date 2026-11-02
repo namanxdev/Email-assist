@@ -33,7 +33,7 @@ def _env(name: str, default: str = "") -> str:
 def get_settings() -> Settings:
     """Read settings from the environment (with defaults) at call time."""
     return Settings(
-        gemini_model=_env("GEMINI_MODEL", "gemini-flash-latest"),
+        gemini_model=_env("GEMINI_MODEL", "gemini-3.5-flash-lite"),
         gemini_timeout_s=int(_env("GEMINI_TIMEOUT_SECONDS", "60")),
         ms_client_id=_env("MS_CLIENT_ID"),
         ms_tenant=_env("MS_TENANT", "common"),

@@ -13,7 +13,7 @@ def test_defaults(monkeypatch):
     for name in names:
         monkeypatch.delenv(name, raising=False)
     s = get_settings()
-    assert s.gemini_model == "gemini-flash-latest"
+    assert s.gemini_model == "gemini-3.5-flash-lite"
     assert s.gemini_timeout_s == 60
     assert s.ms_tenant == "common"
     assert s.user_timezone == "Asia/Kolkata"

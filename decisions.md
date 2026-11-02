@@ -54,7 +54,7 @@ Status: Accepted
 
 Context: Instructions alone ("ask before sending") are not enforceable: a model can skip them, especially under prompt injection. We considered a two-step design: `prepare_send` stores a pending action and returns a preview and an id; `confirm_send(id)` sends only if the pending action exists and the user message confirms.
 Decision: Gate 1 (instruction): resolve the recipient with `find_contact`, show To/Subject/Body in chat, wait for an explicit "yes". Gate 2 (code): wrap `send_email` and `reply_to_email` in `FunctionTool(require_confirmation=True)`. ADK pauses the call and asks the user to approve the exact arguments, including the recipient address; rejection returns "This tool call is rejected." and the function body never runs.
-Consequences: Gate 2 holds even if the model is confused or injected. Costs: native confirmation is experimental in ADK and is not supported with `DatabaseSessionService` or `VertexAiSessionService`, which is fine for local in-memory sessions. The pending-action design is kept as the fallback and is the planned approach for hosted deployments (scale.md), with a signed action id stored server-side.
+Consequences: Gate 2 holds even if the model is confused or injected. Costs: native confirmation is experimental in ADK and is not supported with `DatabaseSessionService` or `VertexAiSessionService`, which is fine locally: `adk web` uses `SqliteSessionService`, where the gate was verified end to end (see D-24). The pending-action design is kept as the fallback and is the planned approach for hosted deployments (scale.md), with a signed action id stored server-side.
 
 ## D-07: Instruction provider function for fresh date and timezone each turn
 
@@ -192,3 +192,30 @@ Status: Accepted
 Context: Graph offers both `/reply` and `/replyAll`. When a send is rejected or still pending, ADK's confirmation layer returns `{"error": ...}` before our function runs.
 Decision: `reply_to_email` uses `/reply` only. Reply-all is out of scope because it widens the recipient set without the user seeing each address. We do not wrap ADK's confirmation responses.
 Consequences: Fewer surprising recipients. The agent sees two error shapes: ours (`status: error`) and ADK's (`error`), and the instruction handles both the same way (report to user).
+
+## D-22: Default model gemini-3.5-flash-lite instead of the gemini-flash-latest alias
+
+Date: 2026-11-02
+Status: Accepted (supersedes the original default in the brief)
+
+Context: In the first real run, single `generateContent` calls on `gemini-flash-latest` took 3 and 9 minutes. A direct probe with no agent ("Reply ok", 8 tokens) took 286 s, then the connection dropped; with thinking disabled it returned 504 after 44 s. Network was fine (TLS to the API in 0.3 s; Graph calls 0.6 s). The 2.5-series models are not offered to new API keys.
+Decision: Default to the pinned `gemini-3.5-flash-lite`. On the assignment prompts it chose the correct tool with correct arguments (`search_emails(query="meeting", since=until=yesterday)`, `list_emails(top=1)`) in 0.8-1.3 s. `gemini-3.5-flash` was equally correct at ~3-4 s and is the upgrade path if answer quality needs it. Overridable via `GEMINI_MODEL`.
+Consequences: Lowest cost and latency, and a pinned version does not change under us mid-demo the way a `-latest` alias can. Lite models are weaker at long reasoning; this agent's work is tool routing plus short summaries, which fits.
+
+## D-23: Graph retry policy distinguishes safe and unsafe retries
+
+Date: 2026-11-02
+Status: Accepted
+
+Context: Retrying blindly is dangerous for `POST /me/sendMail`: if a gateway returns 502/504 or the connection drops after the request was sent, the mail may already have gone out, and a retry would send it twice.
+Decision: 429/503 (Graph did not process the request) are retried for any method, honouring Retry-After, else exponential backoff 2s, 4s, 8s (cap 30s, max 3 retries). 502/504 and network errors are retried only for GET. For POST, only `httpx.ConnectError` (nothing was sent) is retried. Each rule has a test.
+Consequences: Reads are resilient to transient failures; sends are at-most-once. A send that hits an ambiguous error surfaces it to the user instead of guessing, and the user can check Sent Items.
+
+## D-24: Bound every Gemini call with a timeout and retry; approval gate verified on SQLite sessions
+
+Date: 2026-11-02
+Status: Accepted
+
+Context: With no client timeout, one stalled model call blocked the whole turn for minutes. Separately, ADK 2.13's `adk web` stores sessions in SQLite, not in memory as first assumed, and native confirmation is documented as unsupported on `DatabaseSessionService`.
+Decision: `generate_content_config.http_options` sets `timeout` (`GEMINI_TIMEOUT_SECONDS`, default 60) and `retry_options(attempts=3, initial_delay=2, max_delay=10)`; google-genai retries timeouts, 408, 429 and 5xx. We ran an end-to-end check with the real model, `SqliteSessionService` and a fake send tool: no send before approval, none after reject, exactly one after approve.
+Consequences: Worst case a turn fails in about 3 minutes with a clear error instead of hanging. Streaming (the `adk web` toggle) improves perceived latency of the final answer only; it does not shorten time-to-first-token or tool-call steps, so it is a UI preference, not a fix.
