@@ -38,12 +38,31 @@ def _error_message(resp: httpx.Response) -> str:
         return resp.reason_phrase or "Unknown error"
 
 
-def _retry_delay(resp: httpx.Response) -> float:
+def _retry_delay(resp: httpx.Response | None, attempt: int) -> float:
+    """Honour Retry-After when Graph sends it; otherwise back off exponentially (2s, 4s, 8s)."""
+    fallback = DEFAULT_RETRY_AFTER * 2 ** (attempt - 1)
+    header = resp.headers.get("Retry-After") if resp is not None else None
     try:
-        delay = float(resp.headers.get("Retry-After", DEFAULT_RETRY_AFTER))
+        delay = float(header) if header is not None else fallback
     except ValueError:
-        delay = DEFAULT_RETRY_AFTER
+        delay = fallback
     return min(max(delay, 0.0), MAX_RETRY_AFTER)
+
+
+def _should_retry(method: str, status: int) -> bool:
+    """429/503 mean Graph did not process the request, so they are safe for any method.
+
+    502/504 are ambiguous (a gateway may have forwarded the request), so only idempotent
+    GETs are retried on them. Retrying a POST /sendMail there could send the email twice.
+    """
+    if status in (429, 503):
+        return True
+    return method == "GET" and status in (502, 504)
+
+
+def _transport_retryable(method: str, exc: httpx.TransportError) -> bool:
+    """A connect failure means nothing was sent; any other transport error is only safe for GET."""
+    return method == "GET" or isinstance(exc, httpx.ConnectError)
 
 
 def _odata_str(value: str) -> str:
@@ -106,15 +125,22 @@ class GraphClient:
                 "Authorization": f"Bearer {token}",
                 "Prefer": 'outlook.body-content-type="text"',
             }
-            resp = await self._http.request(method, url, json=json, headers=headers)
+            try:
+                resp = await self._http.request(method, url, json=json, headers=headers)
+            except httpx.TransportError as exc:
+                if retries >= MAX_RETRIES or not _transport_retryable(method, exc):
+                    raise
+                retries += 1
+                await self._sleep(_retry_delay(None, retries))
+                continue
             if resp.status_code == 401:
                 if refreshed:
                     raise AuthRequired("Microsoft rejected the access token. Sign in again.")
                 refreshed = True
                 token = await self._token(True)
-            elif resp.status_code in (429, 503) and retries < MAX_RETRIES:
+            elif _should_retry(method, resp.status_code) and retries < MAX_RETRIES:
                 retries += 1
-                await self._sleep(_retry_delay(resp))
+                await self._sleep(_retry_delay(resp, retries))
             else:
                 break
         if resp.status_code in (202, 204):

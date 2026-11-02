@@ -232,7 +232,8 @@ async def test_retry_after_is_capped_and_defaulted(client, sleeper):
         ]
     )
     await client.list_messages()
-    assert sleeper.delays == [30.0, 2.0]
+    # Capped Retry-After, then exponential fallback for attempt 2 (2s * 2).
+    assert sleeper.delays == [30.0, 4.0]
 
 
 @respx.mock
@@ -267,3 +268,61 @@ async def test_non_json_error_body_still_maps_to_graph_error(client):
     with pytest.raises(GraphError) as exc:
         await client.list_messages()
     assert exc.value.status_code == 502
+
+
+SEND = f"{BASE_URL}/me/sendMail"
+
+
+@respx.mock
+async def test_get_retries_gateway_errors(client, sleeper):
+    route = respx.get(INBOX).mock(
+        side_effect=[
+            httpx.Response(504),
+            httpx.Response(502),
+            httpx.Response(200, json={"value": []}),
+        ]
+    )
+    assert await client.list_messages() == []
+    assert route.call_count == 3
+    assert sleeper.delays == [2.0, 4.0]
+
+
+@respx.mock
+async def test_send_is_not_retried_on_ambiguous_gateway_error(client, sleeper):
+    # A 504 on POST /sendMail may mean the mail went out; retrying could send it twice.
+    route = respx.post(SEND).respond(504)
+    with pytest.raises(GraphError):
+        await client.send_mail(["a@x.com"], "s", "b")
+    assert route.call_count == 1
+    assert sleeper.delays == []
+
+
+@respx.mock
+async def test_send_is_retried_when_throttled(client, sleeper):
+    route = respx.post(SEND).mock(
+        side_effect=[httpx.Response(429, headers={"Retry-After": "1"}), httpx.Response(202)]
+    )
+    await client.send_mail(["a@x.com"], "s", "b")
+    assert route.call_count == 2
+    assert sleeper.delays == [1.0]
+
+
+@respx.mock
+async def test_get_retries_network_errors(client, sleeper):
+    route = respx.get(INBOX).mock(
+        side_effect=[httpx.ReadTimeout("slow"), httpx.Response(200, json={"value": []})]
+    )
+    assert await client.list_messages() == []
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_send_retries_connect_error_but_not_read_timeout(client, sleeper):
+    route = respx.post(SEND).mock(side_effect=[httpx.ConnectError("down"), httpx.Response(202)])
+    await client.send_mail(["a@x.com"], "s", "b")
+    assert route.call_count == 2
+
+    timeout_route = respx.post(SEND).mock(side_effect=httpx.ReadTimeout("sent?"))
+    with pytest.raises(httpx.ReadTimeout):
+        await client.send_mail(["a@x.com"], "s", "b")
+    assert timeout_route.call_count == 3  # 2 from before + exactly 1 new attempt
