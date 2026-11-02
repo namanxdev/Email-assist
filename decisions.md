@@ -214,7 +214,7 @@ Consequences: Reads are resilient to transient failures; sends are at-most-once.
 ## D-24: Bound every Gemini call with a timeout and retry; approval gate verified on SQLite sessions
 
 Date: 2026-11-02
-Status: Accepted
+Status: Superseded by D-25 and D-26
 
 Context: With no client timeout, one stalled model call blocked the whole turn for minutes. Separately, ADK 2.13's `adk web` stores sessions in SQLite, not in memory as first assumed, and native confirmation is documented as unsupported on `DatabaseSessionService`.
 Decision: `generate_content_config.http_options` sets `timeout` (`GEMINI_TIMEOUT_SECONDS`, default 60) and `retry_options(attempts=3, initial_delay=2, max_delay=10)`; google-genai retries timeouts, 408, 429 and 5xx. We ran an end-to-end check with the real model, `SqliteSessionService` and a fake send tool: no send before approval, none after reject, exactly one after approve.

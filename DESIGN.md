@@ -86,8 +86,9 @@ Difficulty: Green = straightforward, Yellow = a known Graph or ADK pitfall, hand
 
 | Endpoint | Used by | Delegated permission |
 |---|---|---|
-| `GET /me` | `auth login` ("Signed in as ...") | `User.Read` |
-| `GET /me/mailFolders/{folder}/messages` | `list_emails`, `search_emails`, `find_contact` | `Mail.Read` |
+| none (ID token claims) | `mail-login` ("Signed in as ..." reads `preferred_username` from the ID token; no `GET /me`) | `User.Read` (sign-in) |
+| `GET /me/mailFolders/{folder}/messages` | `list_emails` (`$filter`/`$orderby`, or `$search "from:<name>"` for a sender name) | `Mail.Read` |
+| `GET /me/messages` with `$search` | `search_emails`, `find_contact` (all folders) | `Mail.Read` |
 | `GET /me/messages/{id}` | `get_email` | `Mail.Read` |
 | `POST /me/sendMail` | `send_email` | `Mail.Send` |
 | `POST /me/messages/{id}/reply` | `reply_to_email` | `Mail.Send` |

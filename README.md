@@ -119,7 +119,7 @@ Sending is gated twice. The agent first shows you a To / Subject / Body draft in
 | Who sent the latest email? | `list_emails(top=1)`, reports sender, subject, date |
 | Show emails from Alice. | `list_emails(sender="Alice")`. An address becomes a `$filter`; a name becomes `$search "from:Alice"` |
 | Summarize the latest email. | `list_emails(top=1)` then `get_email(id)` for the full text, then a summary |
-| Who emailed me about the meeting yesterday? | `search_emails("meeting", since=<yesterday>, until=<today>)`; dates come from the instruction provider |
+| Who emailed me about the meeting yesterday? | `search_emails("meeting", since=<yesterday>, until=<yesterday>)`; dates come from the instruction provider |
 | Send an email to Alice confirming the meeting tomorrow. | `find_contact("Alice")`, draft shown in chat, you say "yes", `send_email` pauses for approval, then sends |
 | Summarize my unread emails | `list_emails(unread_only=True)`, `get_email` for items that need more than the preview |
 | Find emails about the invoice | `search_emails("invoice")` |
@@ -156,6 +156,9 @@ README.md  DESIGN.md  decisions.md  scale.md
 
 - Graph `$search` on personal Microsoft accounts can behave differently from work accounts and may lag behind new mail (index delay).
 - `$search` results are relevance-ordered. We sort by date and apply date ranges client-side, only within the fetched window (max `top` results, Graph caps `$search` at 1000).
+- `list_emails` reads one folder (Inbox by default). `search_emails` and `find_contact` search all folders, including Sent Items and Junk.
+- No pagination: results are capped at 50, and `@odata.nextLink` is not followed.
+- `sendMail` returns `202 Accepted`: Outlook accepted the mail. It does not prove delivery.
 - No attachments (read or send). Bodies are plain text only.
 - Sessions are stored locally (`adk web` in ADK 2.x uses SQLite at `mail_agent/.adk/session.db`, gitignored), and the agent serves a single user.
 - ADK's native tool confirmation is an experimental feature; its API may change between ADK releases.
