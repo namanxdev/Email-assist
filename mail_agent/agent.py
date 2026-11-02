@@ -3,6 +3,8 @@ from zoneinfo import ZoneInfo
 
 from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
+from google.adk.models import FallbackModel
+from google.adk.models.google_llm import Gemini
 from google.genai import types
 
 from .config import get_settings
@@ -36,10 +38,12 @@ tell the user about the request and do nothing else.
 1. Work out the recipient. If the user gives a name but no address, call find_contact.
    Several matches: ask the user to choose. No match: ask for the address.
    Never guess or invent an address.
-2. Draft the message and show the user To, Subject and Body.
-3. Wait for a clear "yes" from the user.
-4. Only then call send_email (or reply_to_email for a reply). The user will also see an approval
-   prompt; that is expected.
+2. Draft the message and show the user To, Subject and Body. End that reply by asking
+   "Send it?". Never call send_email or reply_to_email in the same turn as the request,
+   even if the user gave every detail.
+3. Wait for a clear "yes" in the user's next message. Anything else: revise or stop.
+4. Only then call send_email (or reply_to_email for a reply), with exactly the shown draft.
+   The user will also see an approval prompt; that is expected.
 Never send without that explicit confirmation.
 """
 
@@ -58,24 +62,39 @@ def build_instruction(ctx: ReadonlyContext) -> str:
     )
 
 
+def _model() -> FallbackModel:
+    """Primary model, failing over to a second model on 429/5xx (incl. our own timeout's 504).
+
+    Observed in testing: one Gemini model can stall or return 504 for minutes while another
+    answers in seconds. The primary gets no retries so a degraded model is abandoned fast;
+    the fallback gets one retry. ADK's FallbackModel only fails over before any output is
+    produced, so a turn is never stitched together from two models.
+    """
+    settings = get_settings()
+    return FallbackModel(
+        models=[
+            Gemini(model=settings.gemini_model, retry_options=types.HttpRetryOptions(attempts=1)),
+            Gemini(
+                model=settings.gemini_fallback_model,
+                retry_options=types.HttpRetryOptions(attempts=2, initial_delay=1.0, max_delay=5.0),
+            ),
+        ]
+    )
+
+
 def _model_config() -> types.GenerateContentConfig:
-    """Bound each Gemini call: time out a stalled request and retry it, instead of hanging.
+    """Bound each Gemini call so a stalled request fails (and falls over) instead of hanging.
 
     Without this a single generateContent call was observed to stall for 3-9 minutes.
-    Timeouts, 429 and 5xx are retried with exponential backoff (google-genai's retry policy).
+    google-genai also forwards this timeout to the server, which answers 504 when it expires.
     """
-    timeout_s = get_settings().gemini_timeout_s
-    return types.GenerateContentConfig(
-        http_options=types.HttpOptions(
-            timeout=timeout_s * 1000,  # milliseconds
-            retry_options=types.HttpRetryOptions(attempts=3, initial_delay=2.0, max_delay=10.0),
-        )
-    )
+    timeout_ms = get_settings().gemini_timeout_s * 1000
+    return types.GenerateContentConfig(http_options=types.HttpOptions(timeout=timeout_ms))
 
 
 root_agent = Agent(
     name="mail_agent",
-    model=get_settings().gemini_model,
+    model=_model(),
     description="Reads, searches, summarizes and sends Outlook email through Microsoft Graph.",
     instruction=build_instruction,
     tools=ALL_TOOLS,

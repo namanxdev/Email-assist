@@ -2,6 +2,8 @@ from datetime import datetime
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
+from google.adk.models import FallbackModel
+
 from mail_agent.agent import build_instruction, root_agent
 
 
@@ -33,7 +35,20 @@ def test_root_agent_has_six_tools_and_dynamic_instruction():
     assert callable(root_agent.instruction)
 
 
-def test_model_calls_have_timeout_and_retry():
-    http = root_agent.generate_content_config.http_options
-    assert http.timeout == 60_000
-    assert http.retry_options.attempts == 3
+def test_model_calls_have_timeout():
+    assert root_agent.generate_content_config.http_options.timeout == 30_000
+
+
+def test_model_fails_over_to_a_second_model_on_server_errors():
+    model = root_agent.model
+    assert isinstance(model, FallbackModel)
+    primary, fallback = model.models
+    assert primary.model == "gemini-3.5-flash"
+    assert fallback.model == "gemini-3.5-flash-lite"
+    assert primary.retry_options.attempts == 1  # abandon a degraded model fast
+    assert {429, 503, 504} <= set(model.retriable_status_codes)
+
+
+def test_send_flow_requires_a_separate_confirmation_turn():
+    text = build_instruction(MagicMock())
+    assert "Never call send_email or reply_to_email in the same turn" in text

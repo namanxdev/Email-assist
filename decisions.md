@@ -219,3 +219,12 @@ Status: Accepted
 Context: With no client timeout, one stalled model call blocked the whole turn for minutes. Separately, ADK 2.13's `adk web` stores sessions in SQLite, not in memory as first assumed, and native confirmation is documented as unsupported on `DatabaseSessionService`.
 Decision: `generate_content_config.http_options` sets `timeout` (`GEMINI_TIMEOUT_SECONDS`, default 60) and `retry_options(attempts=3, initial_delay=2, max_delay=10)`; google-genai retries timeouts, 408, 429 and 5xx. We ran an end-to-end check with the real model, `SqliteSessionService` and a fake send tool: no send before approval, none after reject, exactly one after approve.
 Consequences: Worst case a turn fails in about 3 minutes with a clear error instead of hanging. Streaming (the `adk web` toggle) improves perceived latency of the final answer only; it does not shorten time-to-first-token or tool-call steps, so it is a UI preference, not a fix.
+
+## D-25: Primary gemini-3.5-flash with automatic fallback; draft-first enforced by a separate turn
+
+Date: 2026-11-02
+Status: Accepted (supersedes the model choice in D-22)
+
+Context: Twenty minutes after D-22, `gemini-3.5-flash-lite` and `gemini-flash-lite-latest` started returning 504 on most calls (one success at 25 s), while `gemini-3.5-flash` answered in 1.9-3.4 s. Model availability on the Gemini API changes minute to minute. Separately, in a real session the model went straight from "send an email to X" to `send_email`, skipping the in-chat draft; only the native approval gate (D-06) stopped it. Also found: the API rejects deadlines under 10 s (400 INVALID_ARGUMENT).
+Decision: Use ADK's built-in `FallbackModel`: primary `gemini-3.5-flash` (no retries, so a degraded model is abandoned fast), fallback `gemini-3.5-flash-lite` (one retry), switching on 429/500/502/503/504. Timeout 30 s per call, clamped to at least 10 s. The instruction now forbids calling `send_email`/`reply_to_email` in the same turn as the request: the draft ends with "Send it?" and only a "yes" in the next message proceeds.
+Consequences: Verified with the real API: a failing primary logged "falling back to the next model"; a send request returned a draft and zero tool calls (5.8 s). FallbackModel is experimental in ADK 2.13 and never switches models mid-response. If both models are down the turn ends with a clear error, not a hang.

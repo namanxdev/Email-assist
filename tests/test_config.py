@@ -5,6 +5,7 @@ def test_defaults(monkeypatch):
     names = (
         "GEMINI_MODEL",
         "GEMINI_TIMEOUT_SECONDS",
+        "GEMINI_FALLBACK_MODEL",
         "MS_CLIENT_ID",
         "MS_TENANT",
         "USER_TIMEZONE",
@@ -13,8 +14,9 @@ def test_defaults(monkeypatch):
     for name in names:
         monkeypatch.delenv(name, raising=False)
     s = get_settings()
-    assert s.gemini_model == "gemini-3.5-flash-lite"
-    assert s.gemini_timeout_s == 60
+    assert s.gemini_model == "gemini-3.5-flash"
+    assert s.gemini_fallback_model == "gemini-3.5-flash-lite"
+    assert s.gemini_timeout_s == 30
     assert s.ms_tenant == "common"
     assert s.user_timezone == "Asia/Kolkata"
     assert s.ms_client_id == ""
@@ -31,3 +33,8 @@ def test_reads_env_at_call_time_and_strips(monkeypatch):
 def test_scopes_exclude_reserved_ones():
     assert GRAPH_SCOPES == ["User.Read", "Mail.Read", "Mail.Send"]
     assert TOKEN_CACHE_PATH.name == "token_cache.json"
+
+
+def test_gemini_timeout_has_api_minimum(monkeypatch):
+    monkeypatch.setenv("GEMINI_TIMEOUT_SECONDS", "2")
+    assert get_settings().gemini_timeout_s == 10

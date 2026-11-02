@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 # itself and raises if they are passed explicitly.
 GRAPH_SCOPES: list[str] = ["User.Read", "Mail.Read", "Mail.Send"]
 
+MIN_GEMINI_TIMEOUT_S = 10
+
 TOKEN_CACHE_PATH: Path = Path(__file__).resolve().parent.parent / "token_cache.json"
 
 load_dotenv()
@@ -18,6 +20,7 @@ load_dotenv()
 @dataclass(frozen=True)
 class Settings:
     gemini_model: str
+    gemini_fallback_model: str
     gemini_timeout_s: int
     ms_client_id: str
     ms_tenant: str
@@ -33,8 +36,10 @@ def _env(name: str, default: str = "") -> str:
 def get_settings() -> Settings:
     """Read settings from the environment (with defaults) at call time."""
     return Settings(
-        gemini_model=_env("GEMINI_MODEL", "gemini-3.5-flash-lite"),
-        gemini_timeout_s=int(_env("GEMINI_TIMEOUT_SECONDS", "60")),
+        gemini_model=_env("GEMINI_MODEL", "gemini-3.5-flash"),
+        gemini_fallback_model=_env("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite"),
+        # The Gemini API rejects deadlines under 10s with 400 INVALID_ARGUMENT.
+        gemini_timeout_s=max(MIN_GEMINI_TIMEOUT_S, int(_env("GEMINI_TIMEOUT_SECONDS", "30"))),
         ms_client_id=_env("MS_CLIENT_ID"),
         ms_tenant=_env("MS_TENANT", "common"),
         user_timezone=_env("USER_TIMEZONE", "Asia/Kolkata"),

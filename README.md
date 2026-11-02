@@ -70,7 +70,9 @@ Edit `.env` in the repo root (ADK walks up from the agent folder to find it):
 | Variable | Required | Meaning |
 |---|---|---|
 | `GOOGLE_API_KEY` | yes | Gemini API key |
-| `GEMINI_MODEL` | no | Defaults to `gemini-3.5-flash-lite` (see decisions.md D-22) |
+| `GEMINI_MODEL` | no | Primary model. Defaults to `gemini-3.5-flash` (decisions.md D-22, D-25) |
+| `GEMINI_FALLBACK_MODEL` | no | Used automatically on 429/5xx/timeout. Defaults to `gemini-3.5-flash-lite` |
+| `GEMINI_TIMEOUT_SECONDS` | no | Per model call, minimum 10 (API limit). Defaults to 30 |
 | `MS_CLIENT_ID` | yes (unless bearer token) | Application (client) ID from the registration |
 | `MS_TENANT` | no | Defaults to `common` |
 | `USER_TIMEZONE` | no | IANA name used to resolve "yesterday", "tomorrow" (example: `Asia/Kolkata`) |
@@ -161,3 +163,14 @@ README.md  DESIGN.md  decisions.md  scale.md
 - No drafts in Outlook: `Mail.ReadWrite` is deliberately not requested, so drafts exist only in the chat.
 
 Next steps (multi-user hosting, large mailboxes, change notifications) are in [scale.md](scale.md). Trade-offs are in [DESIGN.md](DESIGN.md) and [decisions.md](decisions.md).
+
+## Troubleshooting
+
+- **Sent, but the recipient never got it.** Check who you are signed in as: mail goes out from the
+  Microsoft account's own address (e.g. `you@outlook.com`), even if you log in with another
+  address. If the message is in Outlook's Sent Items and no bounce ("Undeliverable") arrived, Graph
+  delivered it to the recipient's mail server; look in the recipient's spam folder. New outlook.com
+  accounts and mail forwarded through custom domains are often filtered as spam.
+- **`504 DEADLINE_EXCEEDED` from Gemini.** The model did not answer within `GEMINI_TIMEOUT_SECONDS`.
+  The agent fails over to `GEMINI_FALLBACK_MODEL` automatically; if both are degraded, retry later or
+  set different models in `.env`.
