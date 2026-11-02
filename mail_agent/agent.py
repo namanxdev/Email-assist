@@ -66,14 +66,20 @@ def _model() -> FallbackModel:
     """Primary model, failing over to a second model on 429/5xx (incl. our own timeout's 504).
 
     Observed in testing: one Gemini model can stall or return 504 for minutes while another
-    answers in seconds. The primary gets no retries so a degraded model is abandoned fast;
-    the fallback gets one retry. ADK's FallbackModel only fails over before any output is
-    produced, so a turn is never stitched together from two models.
+    answers in seconds, and the network can drop a connection for a few seconds.
+    - Primary: an error status (429/5xx) goes straight to the fallback, so a degraded model is
+      abandoned fast. A connection failure carries no status, so FallbackModel would not fail
+      over on it; the primary retries those once instead. google-genai always retries
+      connect/timeout errors; http_status_codes=[408] keeps 429/5xx out of the retry set.
+    - Fallback: retried once on anything transient.
+    ADK's FallbackModel only fails over before any output is produced, so a turn is never
+    stitched together from two models.
     """
     settings = get_settings()
+    primary_retry = types.HttpRetryOptions(attempts=2, initial_delay=1.0, http_status_codes=[408])
     return FallbackModel(
         models=[
-            Gemini(model=settings.gemini_model, retry_options=types.HttpRetryOptions(attempts=1)),
+            Gemini(model=settings.gemini_model, retry_options=primary_retry),
             Gemini(
                 model=settings.gemini_fallback_model,
                 retry_options=types.HttpRetryOptions(attempts=2, initial_delay=1.0, max_delay=5.0),

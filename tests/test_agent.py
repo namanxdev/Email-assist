@@ -45,7 +45,9 @@ def test_model_fails_over_to_a_second_model_on_server_errors():
     primary, fallback = model.models
     assert primary.model == "gemini-3.5-flash"
     assert fallback.model == "gemini-3.5-flash-lite"
-    assert primary.retry_options.attempts == 1  # abandon a degraded model fast
+    # Network blips are retried on the primary; error statuses go straight to the fallback.
+    assert primary.retry_options.attempts == 2
+    assert primary.retry_options.http_status_codes == [408]
     assert {429, 503, 504} <= set(model.retriable_status_codes)
 
 
