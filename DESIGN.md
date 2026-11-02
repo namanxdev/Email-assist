@@ -75,7 +75,7 @@ Difficulty: Green = straightforward, Yellow = a known Graph or ADK pitfall, hand
 | Filter by sender name | `list_emails(sender)` | Yellow | Display names cannot be filtered reliably; uses `$search "from:<name>"`, which is relevance-ordered (see below) |
 | Topic and date search | `search_emails` | Yellow | `$search` cannot be combined with `$orderby` or `$filter` on messages; we sort by date and apply `since`/`until` client-side |
 | Read full message | `get_email` | Green | Plain-text body, truncated at 4000 chars with `truncated=true` |
-| Name to address resolution | `find_contact` | Yellow | `$search "participants:<name>"`, dedupe by address; never guesses. 0 matches: ask for the address; more than 1: ask the user to choose |
+| Name to address resolution | `find_contact` | Yellow | `$search "participants:<name>"`, dedupe by address, the user's own address excluded; never guesses. 0 matches: ask for the address; more than 1: ask the user to choose |
 | Send with confirmation | `send_email` | Yellow | `POST /me/sendMail`; two gates (chat draft plus ADK tool confirmation) |
 | Reply with confirmation | `reply_to_email` | Yellow | `POST /me/messages/{id}/reply`; same two gates |
 | Relative dates and timezones | instruction provider | Green | Current date, weekday, time, yesterday and tomorrow injected every turn in `USER_TIMEZONE` |

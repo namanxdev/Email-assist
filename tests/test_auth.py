@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 
 import msal
@@ -166,3 +167,39 @@ def test_main_reports_errors_without_traceback(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         auth.main()
     assert "MS_CLIENT_ID" in str(exc.value)
+
+
+def _write_cache_with_accounts(*usernames: str) -> None:
+    accounts = {
+        f"k{i}": {
+            "home_account_id": f"h{i}",
+            "environment": "login.microsoftonline.com",
+            "realm": "consumers",
+            "username": name,
+        }
+        for i, name in enumerate(usernames)
+    }
+    config.TOKEN_CACHE_PATH.write_text(json.dumps({"Account": accounts}), encoding="utf-8")
+
+
+def test_signed_in_addresses_reads_cached_usernames_without_msal_app(monkeypatch):
+    monkeypatch.delenv("MS_CLIENT_ID")
+    boom = MagicMock(side_effect=AssertionError("no MSAL app needed"))
+    monkeypatch.setattr(msal, "PublicClientApplication", boom)
+    _write_cache_with_accounts(" Me@Outlook.com ", "work@acme.com")
+    assert auth.signed_in_addresses() == {"me@outlook.com", "work@acme.com"}
+
+
+def test_signed_in_addresses_empty_without_cache():
+    assert auth.signed_in_addresses() == set()
+
+
+def test_signed_in_addresses_empty_with_bearer_token(monkeypatch):
+    _write_cache_with_accounts("me@outlook.com")
+    monkeypatch.setenv("GRAPH_BEARER_TOKEN", "tok")
+    assert auth.signed_in_addresses() == set()
+
+
+def test_signed_in_addresses_never_raises_on_corrupt_cache():
+    config.TOKEN_CACHE_PATH.write_text("{not json", encoding="utf-8")
+    assert auth.signed_in_addresses() == set()

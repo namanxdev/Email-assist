@@ -83,6 +83,21 @@ def logout() -> None:
     print("Signed out and token cache removed.")
 
 
+def signed_in_addresses() -> set[str]:
+    """Lowercased usernames of the accounts in the token cache. Never raises.
+
+    Read straight from the cache file (no client id, no network). Returns an empty set when
+    no address is known: GRAPH_BEARER_TOKEN is set, there is no cache, or it is unreadable.
+    """
+    if config.get_settings().graph_bearer_token:
+        return set()
+    try:
+        accounts = list(_load_cache().search(msal.TokenCache.CredentialType.ACCOUNT))
+    except (OSError, ValueError):
+        return set()
+    return {a["username"].strip().lower() for a in accounts if a.get("username")}
+
+
 def get_access_token(force_refresh: bool = False) -> str:
     """Return a valid Graph access token, refreshing silently from the cache when needed.
 

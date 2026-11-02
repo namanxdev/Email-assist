@@ -246,3 +246,13 @@ Status: Accepted (supersedes D-03)
 Context: Device code sign-in made the user copy a code from the terminal into a second page, which is clumsy, and it is not the standard flow users and reviewers expect from a desktop app. Device code is also a known phishing vector: an attacker can start a flow and trick a user into entering the code, so many tenants block it with Conditional Access. A local browser is available wherever this agent normally runs.
 Decision: `uv run mail-login` calls `PublicClientApplication.acquire_token_interactive(scopes, prompt="select_account")`. MSAL opens the system browser, listens on `http://localhost` with a random port, and runs the authorization code flow with PKCE (built into MSAL). The app registration has `http://localhost` as a "Mobile and desktop applications" redirect URI. Device code is removed completely; "Allow public client flows" is no longer needed. The token cache, `get_access_token()` and the `GRAPH_BEARER_TOKEN` fallback are unchanged. An `AADSTS50011` failure prints how to add the redirect URI.
 Consequences: One click-through sign-in in the browser, and no device code exposure. Sign-in needs a local browser and the redirect URI in Entra; headless machines (SSH, containers) use `GRAPH_BEARER_TOKEN` instead. Still a public client with no secret, so the hosted design in scale.md (confidential client, web redirect) is unaffected.
+
+## D-28: find_contact excludes the signed-in user's own address
+
+Date: 2026-11-02
+Status: Accepted (refines D-13)
+
+Context: `participants:<name>` matches every message the user sent or received with that person, so the user's own address is in almost every result. Searching for a name the user shares (or part of their own address) returned the user as a candidate, which adds a wrong choice to the "which one?" question and could lead to a draft addressed to the user.
+Decision: `find_contact` drops every address that matches a `username` in the MSAL token cache, compared case-insensitively. `auth.signed_in_addresses()` reads the accounts straight from `token_cache.json` (no MSAL app, no client id, no network) and never raises: it returns an empty set when `GRAPH_BEARER_TOKEN` is set, when there is no cache, or when the cache is unreadable. In those cases nothing is filtered.
+Consequences: Cleaner candidate lists with no extra Graph call (no `GET /me`). With a bearer token the user's own address can still appear; the in-chat draft and the approval dialog (D-06) still show the final address. An account whose sending address differs from its sign-in username (for example an alias) is not filtered.
+

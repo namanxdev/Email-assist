@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 from google.adk.tools import FunctionTool
 
-from .auth import AuthRequired
+from .auth import AuthRequired, signed_in_addresses
 from .config import get_settings
 from .graph_client import GraphClient, GraphError
 from .models import Contact, to_contact, to_detail, to_summary
@@ -197,14 +197,17 @@ async def get_email(email_id: str) -> dict[str, Any]:
         return _error(exc)
 
 
-def _collect_contacts(messages: list[dict[str, Any]], needle: str) -> list[Contact]:
+def _collect_contacts(
+    messages: list[dict[str, Any]], needle: str, exclude: set[str]
+) -> list[Contact]:
+    """Unique matching contacts; addresses in `exclude` (the user's own) are skipped."""
     found: dict[str, Contact] = {}
     for msg in messages:
         for person in [msg.get("from"), *(msg.get("toRecipients") or [])]:
             contact = to_contact(person)
             key = contact["email"].lower()
             matches = needle in contact["name"].lower() or needle in key
-            if key and matches and key not in found:
+            if key and matches and key not in exclude and key not in found:
                 found[key] = contact
     return list(found.values())
 
@@ -221,7 +224,8 @@ async def find_contact(name: str) -> dict[str, Any]:
 
     Returns:
         {"status": "success", "count": int, "matches": [{"name": str, "email": str}]} with
-        unique addresses. On failure: {"status": "error", "message": str}.
+        unique addresses, never the signed-in user's own. On failure:
+        {"status": "error", "message": str}.
     """
     try:
         needle = name.strip().lower()
@@ -229,7 +233,7 @@ async def find_contact(name: str) -> dict[str, Any]:
             raise ValueError("name must not be empty")
         async with _client() as graph:
             messages = await graph.search_messages(f"participants:{name.strip()}", top=25)
-        matches = _collect_contacts(messages, needle)
+        matches = _collect_contacts(messages, needle, signed_in_addresses())
         return {"status": "success", "count": len(matches), "matches": matches}
     except _HANDLED as exc:
         return _error(exc)

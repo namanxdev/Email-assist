@@ -1,10 +1,11 @@
+import json
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
 from google.adk.tools.tool_confirmation import ToolConfirmation
 
-from mail_agent import tools
+from mail_agent import config, tools
 from mail_agent.auth import AuthRequired
 from mail_agent.graph_client import GraphError
 
@@ -51,6 +52,13 @@ class FakeGraph:
 @pytest.fixture(autouse=True)
 def tz(monkeypatch):
     monkeypatch.setenv("USER_TIMEZONE", "Asia/Kolkata")
+
+
+@pytest.fixture(autouse=True)
+def no_signed_in_user(monkeypatch, tmp_path):
+    """Keep the real token_cache.json out of the tests: no cached account by default."""
+    monkeypatch.setattr(config, "TOKEN_CACHE_PATH", tmp_path / "token_cache.json")
+    monkeypatch.delenv("GRAPH_BEARER_TOKEN", raising=False)
 
 
 @pytest.fixture
@@ -224,6 +232,39 @@ async def test_find_contact_dedupes_case_insensitively(use_graph):
         "priya@acme.com",
         "priya.sharma@other.com",
     ]
+
+
+def _own_and_other_messages() -> list[dict]:
+    return [
+        msg(
+            "1",
+            "2026-11-01T00:00:00Z",
+            **{"from": person("Naman G", "Naman@Outlook.com")},
+            toRecipients=[person("Naman Kumar", "naman.kumar@acme.com")],
+        )
+    ]
+
+
+async def test_find_contact_excludes_signed_in_users_own_address(use_graph, monkeypatch):
+    monkeypatch.setattr(tools, "signed_in_addresses", lambda: {"naman@outlook.com"})
+    use_graph(FakeGraph(messages=_own_and_other_messages()))
+    result = await tools.find_contact("naman")
+    assert result["matches"] == [{"name": "Naman Kumar", "email": "naman.kumar@acme.com"}]
+
+
+async def test_find_contact_reads_own_address_from_token_cache(use_graph):
+    account = {"home_account_id": "h", "environment": "login.microsoftonline.com"}
+    account |= {"realm": "consumers", "username": "naman@outlook.com"}
+    config.TOKEN_CACHE_PATH.write_text(json.dumps({"Account": {"k": account}}), encoding="utf-8")
+    use_graph(FakeGraph(messages=_own_and_other_messages()))
+    result = await tools.find_contact("naman")
+    assert [m["email"] for m in result["matches"]] == ["naman.kumar@acme.com"]
+
+
+async def test_find_contact_without_known_address_does_not_filter(use_graph):
+    use_graph(FakeGraph(messages=_own_and_other_messages()))
+    result = await tools.find_contact("naman")
+    assert [m["email"] for m in result["matches"]] == ["Naman@Outlook.com", "naman.kumar@acme.com"]
 
 
 async def test_find_contact_no_match(use_graph):
