@@ -31,3 +31,9 @@ def test_root_agent_has_six_tools_and_dynamic_instruction():
     assert root_agent.name == "mail_agent"
     assert len(root_agent.tools) == 6
     assert callable(root_agent.instruction)
+
+
+def test_model_calls_have_timeout_and_retry():
+    http = root_agent.generate_content_config.http_options
+    assert http.timeout == 60_000
+    assert http.retry_options.attempts == 3

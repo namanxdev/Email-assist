@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 
 from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
+from google.genai import types
 
 from .config import get_settings
 from .tools import ALL_TOOLS
@@ -57,10 +58,26 @@ def build_instruction(ctx: ReadonlyContext) -> str:
     )
 
 
+def _model_config() -> types.GenerateContentConfig:
+    """Bound each Gemini call: time out a stalled request and retry it, instead of hanging.
+
+    Without this a single generateContent call was observed to stall for 3-9 minutes.
+    Timeouts, 429 and 5xx are retried with exponential backoff (google-genai's retry policy).
+    """
+    timeout_s = get_settings().gemini_timeout_s
+    return types.GenerateContentConfig(
+        http_options=types.HttpOptions(
+            timeout=timeout_s * 1000,  # milliseconds
+            retry_options=types.HttpRetryOptions(attempts=3, initial_delay=2.0, max_delay=10.0),
+        )
+    )
+
+
 root_agent = Agent(
     name="mail_agent",
     model=get_settings().gemini_model,
     description="Reads, searches, summarizes and sends Outlook email through Microsoft Graph.",
     instruction=build_instruction,
     tools=ALL_TOOLS,
+    generate_content_config=_model_config(),
 )

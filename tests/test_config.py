@@ -2,11 +2,19 @@ from mail_agent.config import GRAPH_SCOPES, TOKEN_CACHE_PATH, get_settings
 
 
 def test_defaults(monkeypatch):
-    names = ("GEMINI_MODEL", "MS_CLIENT_ID", "MS_TENANT", "USER_TIMEZONE", "GRAPH_BEARER_TOKEN")
+    names = (
+        "GEMINI_MODEL",
+        "GEMINI_TIMEOUT_SECONDS",
+        "MS_CLIENT_ID",
+        "MS_TENANT",
+        "USER_TIMEZONE",
+        "GRAPH_BEARER_TOKEN",
+    )
     for name in names:
         monkeypatch.delenv(name, raising=False)
     s = get_settings()
     assert s.gemini_model == "gemini-flash-latest"
+    assert s.gemini_timeout_s == 60
     assert s.ms_tenant == "common"
     assert s.user_timezone == "Asia/Kolkata"
     assert s.ms_client_id == ""
