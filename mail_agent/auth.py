@@ -1,14 +1,19 @@
-"""MSAL device-code login, token cache, and `get_access_token()` for the Graph client."""
+"""MSAL browser login (auth code + PKCE), token cache, and `get_access_token()` for Graph."""
 
 import argparse
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import msal
 
 from . import config
 
 NOT_SIGNED_IN = "Not signed in. Run: uv run mail-login"
+REDIRECT_URI_HINT = (
+    'Add the redirect URI http://localhost under the "Mobile and desktop applications" '
+    "platform in Entra (App registrations > your app > Authentication)."
+)
 
 
 class AuthRequired(Exception):
@@ -43,17 +48,26 @@ def _build_app(cache: msal.SerializableTokenCache) -> msal.PublicClientApplicati
     )
 
 
+def _login_error(result: dict[str, Any]) -> str:
+    """User-facing message for a failed interactive sign-in, with a fix for AADSTS50011."""
+    description = result.get("error_description") or result.get("error") or "unknown error"
+    message = f"Sign-in failed: {description}"
+    if "AADSTS50011" in description:
+        message += f"\n{REDIRECT_URI_HINT}"
+    return message
+
+
 def login() -> None:
-    """Interactive device-code sign-in. Prints the URL and code, then waits for the user."""
+    """Interactive browser sign-in (auth code + PKCE). MSAL opens the system browser.
+
+    MSAL listens on http://localhost with a random port for the redirect.
+    """
     cache = _load_cache()
     app = _build_app(cache)
-    flow = app.initiate_device_flow(scopes=config.GRAPH_SCOPES)
-    if "user_code" not in flow:
-        raise RuntimeError(f"Could not start device flow: {flow.get('error_description', flow)}")
-    print("\n" + flow["message"] + "\n")
-    result = app.acquire_token_by_device_flow(flow)
+    print("Opening your browser to sign in...")
+    result = app.acquire_token_interactive(scopes=config.GRAPH_SCOPES, prompt="select_account")
     if "access_token" not in result:
-        raise RuntimeError(f"Sign-in failed: {result.get('error_description', 'unknown error')}")
+        raise RuntimeError(_login_error(result))
     _save_cache(cache)
     username = (result.get("id_token_claims") or {}).get("preferred_username", "unknown user")
     print(f"Signed in as {username}")

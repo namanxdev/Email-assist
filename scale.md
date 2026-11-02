@@ -40,7 +40,7 @@ Principles:
 
 ## Auth at scale
 
-The local device-code, public-client, file-cache setup does not carry over.
+The local setup (interactive auth code + PKCE through a `http://localhost` redirect, a public client, a file cache) does not carry over.
 
 - Flow: authorization code with PKCE through a web redirect. The user signs in once in the browser; the service receives the code and exchanges it.
 - Client type: confidential client authenticating with a certificate (not a secret) stored in a key vault, rotated on a schedule.

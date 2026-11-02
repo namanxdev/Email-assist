@@ -77,11 +77,13 @@ def test_msal_constructed_with_authority_and_no_reserved_scopes(monkeypatch):
     assert not {"offline_access", "openid", "profile"} & set(config.GRAPH_SCOPES)
 
 
-def test_login_prints_message_saves_cache_and_never_prints_token(monkeypatch, capsys, tmp_path):
+def test_login_opens_browser_saves_cache_and_never_prints_token(monkeypatch, capsys):
+    cache = MagicMock(has_state_changed=True)
+    cache.serialize.return_value = '{"cached": true}'
+    monkeypatch.setattr(auth, "_load_cache", MagicMock(return_value=cache))
     app = _fake_app(
         monkeypatch,
-        initiate_device_flow=MagicMock(return_value={"user_code": "ABC", "message": "Go to URL"}),
-        acquire_token_by_device_flow=MagicMock(
+        acquire_token_interactive=MagicMock(
             return_value={
                 "access_token": "secret-token",
                 "id_token_claims": {"preferred_username": "me@x.com"},
@@ -90,29 +92,53 @@ def test_login_prints_message_saves_cache_and_never_prints_token(monkeypatch, ca
     )
     auth.login()
     out = capsys.readouterr().out
-    assert "Go to URL" in out
+    assert "Opening your browser to sign in..." in out
     assert "Signed in as me@x.com" in out
     assert "secret-token" not in out
-    app.initiate_device_flow.assert_called_once_with(scopes=["User.Read", "Mail.Read", "Mail.Send"])
+    app.acquire_token_interactive.assert_called_once_with(
+        scopes=["User.Read", "Mail.Read", "Mail.Send"], prompt="select_account"
+    )
+    assert config.TOKEN_CACHE_PATH.read_text(encoding="utf-8") == '{"cached": true}'
 
 
-def test_login_fails_when_device_flow_cannot_start(monkeypatch):
+def test_login_failure_reports_error_description(monkeypatch):
     _fake_app(
         monkeypatch,
-        initiate_device_flow=MagicMock(return_value={"error_description": "bad client id"}),
+        acquire_token_interactive=MagicMock(
+            return_value={"error": "access_denied", "error_description": "User declined consent"}
+        ),
     )
-    with pytest.raises(RuntimeError, match="bad client id"):
+    with pytest.raises(RuntimeError, match="Sign-in failed: User declined consent") as exc:
         auth.login()
+    assert "http://localhost" not in str(exc.value)
+    assert not config.TOKEN_CACHE_PATH.exists()
 
 
-def test_login_fails_when_token_not_granted(monkeypatch):
+def test_login_redirect_uri_mismatch_explains_entra_fix(monkeypatch):
+    description = "AADSTS50011: The redirect URI 'http://localhost:51234' does not match."
     _fake_app(
         monkeypatch,
-        initiate_device_flow=MagicMock(return_value={"user_code": "A", "message": "m"}),
-        acquire_token_by_device_flow=MagicMock(return_value={"error_description": "declined"}),
+        acquire_token_interactive=MagicMock(
+            return_value={"error": "invalid_request", "error_description": description}
+        ),
     )
-    with pytest.raises(RuntimeError, match="declined"):
+    with pytest.raises(RuntimeError) as exc:
         auth.login()
+    message = str(exc.value)
+    assert description in message
+    assert "http://localhost" in message
+    assert "Mobile and desktop applications" in message
+
+
+def test_login_cli_prints_failure_without_traceback(monkeypatch):
+    _fake_app(
+        monkeypatch,
+        acquire_token_interactive=MagicMock(return_value={"error_description": "AADSTS50011: x"}),
+    )
+    with pytest.raises(SystemExit) as exc:
+        auth.login_cli()
+    assert "AADSTS50011" in str(exc.value)
+    assert "Mobile and desktop applications" in str(exc.value)
 
 
 def test_logout_removes_accounts_and_cache_file(monkeypatch, capsys):

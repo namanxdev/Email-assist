@@ -27,7 +27,7 @@ A professional gets dozens of emails a day. They want to ask in plain language, 
 ## User flow
 
 1. Setup (once): register an Azure app, `uv sync`, fill `.env`.
-2. Login (once): `uv run mail-login`, enter the device code in a browser, tokens cached locally.
+2. Login (once): `uv run mail-login` opens the browser; the user signs in and consents, tokens cached locally.
 3. Ask: user starts `adk web` and types a question.
 4. Retrieve: the agent picks a tool (`list_emails`, `search_emails`, `get_email`), which calls Graph with a token from `auth.py`.
 5. Answer: the agent summarizes, citing sender, subject and date. If nothing matches it says so.
@@ -40,7 +40,7 @@ A professional gets dozens of emails a day. They want to ask in plain language, 
 ```mermaid
 stateDiagram-v2
     [*] --> Unauthenticated
-    Unauthenticated --> Authenticated: auth login (device code)
+    Unauthenticated --> Authenticated: mail-login (browser OAuth)
     Authenticated --> Idle: token available
     Idle --> Retrieving: read question
     Retrieving --> Answering: Graph returns data
@@ -104,7 +104,7 @@ Why only these:
 Full rationale is in [decisions.md](decisions.md). The ones that shape the design:
 
 - Direct REST (httpx) vs msgraph-sdk. We call five endpoints. The SDK adds a large dependency tree and hides the `$filter`/`$search` behavior we have to control. Direct calls keep headers, params and retry policy visible and testable with respx. Cost: we maintain the URL and param construction ourselves.
-- Device code vs auth code vs ADK tool auth. ADK's OAuth support for tools is built around a browser redirect handled by a hosted agent. This is a local CLI/`adk web` tool: device code needs no redirect URI and no client secret, and MSAL handles caching and silent refresh. Cost: the user does one manual sign-in step, and a public client cannot be used for a hosted multi-user service (see scale.md).
+- Interactive auth code + PKCE vs device code vs ADK tool auth. ADK's OAuth support for tools is built around a browser redirect handled by a hosted agent. This is a local CLI/`adk web` tool, so `mail-login` uses MSAL's `acquire_token_interactive`: the standard authorization code flow with PKCE, the system browser, and a `http://localhost` redirect with no client secret. MSAL handles caching and silent refresh. Device code was dropped (D-27): it needs a code copied between windows and is a known phishing vector. Cost: sign-in needs a local browser and the redirect URI in Entra (headless machines use `GRAPH_BEARER_TOKEN`), and a public client cannot be used for a hosted multi-user service (see scale.md).
 - `sendMail` without drafts vs Graph drafts. Drafts need `Mail.ReadWrite`. We trade the convenience of "review in Outlook" for a smaller permission set.
 - Confirmation before send: two gates. Gate 1 is the instruction: resolve the recipient, show To/Subject/Body, wait for "yes". Gate 2 is ADK native tool confirmation (`FunctionTool(require_confirmation=True)`): the function body cannot run until the user approves the exact arguments. Gate 2 is enforced in code, so a confused or prompt-injected model cannot send silently. Cost: native confirmation is experimental in ADK and is not supported with `DatabaseSessionService`/`VertexAiSessionService`. That is fine locally: `adk web` in ADK 2.13 stores sessions in SQLite (`SqliteSessionService`, a separate class from `DatabaseSessionService`), and we verified end to end that the approval gate works there (no send before approval, none after reject, exactly one after approve) and is called out in scale.md as the first thing to replace for a hosted version.
 - Metadata first, body on demand. List and search return id, subject, from, recipients, date, `bodyPreview` (about 255 chars) and `isRead`. Full text is fetched only by `get_email` and truncated at 4000 chars. This keeps the context small, makes "who emailed me" cheap, and limits how much untrusted text enters the prompt.

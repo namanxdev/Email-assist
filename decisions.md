@@ -23,7 +23,7 @@ Consequences: Small dependency footprint; every request is visible and testable 
 ## D-03: MSAL device code flow with a persistent SerializableTokenCache
 
 Date: 2026-11-02
-Status: Accepted
+Status: Superseded by D-27
 
 Context: The agent runs locally. Options: auth code flow (needs a redirect URI and a local web listener), ADK's tool OAuth (designed for hosted agents with a browser redirect), device code flow.
 Decision: `msal.PublicClientApplication` with device code flow, authority `https://login.microsoftonline.com/common`, scopes `User.Read`, `Mail.Read`, `Mail.Send`. The `SerializableTokenCache` is persisted to `token_cache.json` (gitignored). `get_access_token()` uses `acquire_token_silent`, which refreshes through the refresh token MSAL manages; if there is no account it raises `AuthRequired`.
@@ -237,3 +237,12 @@ Status: Accepted (refines D-25)
 Context: In a live session the primary hit our 30 s limit as a client-side `httpx.ReadTimeout`, and a minute earlier a `ConnectError`. Neither carries an HTTP status, and ADK's `FallbackModel` only fails over on status codes, so both errors reached the user while the fallback model sat unused.
 Decision: Subclass `FallbackModel` (`_FailoverOnNetworkErrors`) so `httpx.TimeoutException` and `httpx.ConnectError` also move to the next model. The primary gets a single attempt; the fallback is retried once. Failing over a model call is safe because `generateContent` has no side effects, and FallbackModel never switches after output has started, so tools are not re-run.
 Consequences: Verified through FallbackModel's real code path with stub models (primary raises ReadTimeout, backup answers) and live (primary 429, fallback finished the turn in 2.6 s). Overrides a private ADK method (`_should_fall_back`); tests pin the behaviour so an ADK upgrade that changes it fails loudly.
+
+## D-27: Interactive auth code + PKCE replaces device code
+
+Date: 2026-11-02
+Status: Accepted (supersedes D-03)
+
+Context: Device code sign-in made the user copy a code from the terminal into a second page, which is clumsy, and it is not the standard flow users and reviewers expect from a desktop app. Device code is also a known phishing vector: an attacker can start a flow and trick a user into entering the code, so many tenants block it with Conditional Access. A local browser is available wherever this agent normally runs.
+Decision: `uv run mail-login` calls `PublicClientApplication.acquire_token_interactive(scopes, prompt="select_account")`. MSAL opens the system browser, listens on `http://localhost` with a random port, and runs the authorization code flow with PKCE (built into MSAL). The app registration has `http://localhost` as a "Mobile and desktop applications" redirect URI. Device code is removed completely; "Allow public client flows" is no longer needed. The token cache, `get_access_token()` and the `GRAPH_BEARER_TOKEN` fallback are unchanged. An `AADSTS50011` failure prints how to add the redirect URI.
+Consequences: One click-through sign-in in the browser, and no device code exposure. Sign-in needs a local browser and the redirect URI in Entra; headless machines (SSH, containers) use `GRAPH_BEARER_TOKEN` instead. Still a public client with no secret, so the hosted design in scale.md (confidential client, web redirect) is unaffected.

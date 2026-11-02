@@ -2,7 +2,7 @@
 
 A local email assistant built with Google ADK (Python) and Microsoft Graph. It reads your Outlook mailbox, answers questions about it ("Who sent the latest email?", "Who emailed me about the meeting yesterday?"), and sends or replies to email only after you approve the exact message.
 
-It runs on your machine (`adk web` or `adk run`). Sign-in uses the OAuth device code flow, so there is no redirect URI and no client secret. Tokens stay in a local, gitignored cache file.
+It runs on your machine (`adk web` or `adk run`). Sign-in uses the standard OAuth authorization code flow with PKCE in your browser (MSAL listens on `http://localhost`), so there is no client secret. Tokens stay in a local, gitignored cache file.
 
 For the reasoning behind the design see [DESIGN.md](DESIGN.md), [decisions.md](decisions.md) and [scale.md](scale.md).
 
@@ -15,7 +15,7 @@ flowchart LR
     T --> G["graph_client.py<br/>httpx, retries, errors"]
     G -->|HTTPS| M[(Microsoft Graph API)]
     G -->|get_access_token| AU["auth.py"]
-    AU --> MSAL["MSAL<br/>device code flow"]
+    AU --> MSAL["MSAL<br/>browser OAuth (auth code + PKCE)"]
     MSAL <--> C[("token_cache.json")]
     MSAL -.->|sign in once| E[Microsoft identity platform]
 ```
@@ -40,9 +40,9 @@ You need one app registration so Microsoft can identify this program during sign
 2. Click New registration.
 3. Enter a name, for example `outlook-adk-agent`.
 4. Under Supported account types choose "Accounts in any organizational directory and personal Microsoft accounts".
-5. Leave Redirect URI empty. Click Register.
+5. Leave Redirect URI empty for now. Click Register.
 6. Copy the Application (client) ID from the Overview page. This is `MS_CLIENT_ID`.
-7. Open Authentication, scroll to Advanced settings, set "Allow public client flows" to Yes, and Save. Device code flow fails without this.
+7. Open Authentication > Redirect URI configuration > Add Redirect URI > Mobile and desktop applications, enter `http://localhost`, and click Configure. Sign-in fails with `AADSTS50011` without this.
 8. Open API permissions > Add a permission > Microsoft Graph > Delegated permissions. Add `User.Read`, `Mail.Read` and `Mail.Send`.
 
 No admin consent is needed for these three on personal accounts. On a work tenant, your admin may need to grant consent if user consent is disabled.
@@ -86,15 +86,14 @@ Edit `.env` in the repo root (ADK walks up from the agent folder to find it):
 uv run mail-login
 ```
 
-You will see Microsoft's device code message (illustrative output):
+Your browser opens Microsoft's sign-in page. Pick or sign in to your account and approve the three permissions. The terminal then shows:
 
 ```
-To sign in, use a web browser to open the page https://microsoft.com/devicelogin
-and enter the code ABCD1234 to authenticate.
+Opening your browser to sign in...
 Signed in as you@example.com
 ```
 
-Open the URL, enter the code, sign in, and approve the three permissions. The token cache is saved to `token_cache.json`. After that, tokens refresh silently; you only repeat this if the refresh token expires or you log out.
+The token cache is saved to `token_cache.json`. After that, tokens refresh silently; you only repeat this if the refresh token expires or you log out. On a machine without a local browser (SSH, containers), use the bearer token fallback above.
 
 ```bash
 uv run mail-logout    # deletes the cached account and tokens
