@@ -1,0 +1,40 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+token_cache.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Local tooling and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Agent and assistant instructions
+CLAUDE.md
+AGENTS.md
+
+# OS files
+.DS_Store
+Thumbs.db
+# ADK
+.adk/
