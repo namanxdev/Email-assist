@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import httpx
 from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.models import FallbackModel
@@ -62,24 +63,35 @@ def build_instruction(ctx: ReadonlyContext) -> str:
     )
 
 
-def _model() -> FallbackModel:
-    """Primary model, failing over to a second model on 429/5xx (incl. our own timeout's 504).
+class _FailoverOnNetworkErrors(FallbackModel):
+    """FallbackModel that also fails over when a call times out or cannot connect.
 
-    Observed in testing: one Gemini model can stall or return 504 for minutes while another
-    answers in seconds, and the network can drop a connection for a few seconds.
-    - Primary: an error status (429/5xx) goes straight to the fallback, so a degraded model is
-      abandoned fast. A connection failure carries no status, so FallbackModel would not fail
-      over on it; the primary retries those once instead. google-genai always retries
-      connect/timeout errors; http_status_codes=[408] keeps 429/5xx out of the retry set.
-    - Fallback: retried once on anything transient.
-    ADK's FallbackModel only fails over before any output is produced, so a turn is never
-    stitched together from two models.
+    ADK's FallbackModel only fails over on errors that carry an HTTP status (429/5xx). A
+    client-side timeout or a refused connection carries none, so it would surface to the user
+    even though the second model might answer fine. Retrying a model call on another model is
+    safe: generateContent has no side effects. Tools are never re-run by this, because
+    failover happens before the model has produced any output.
+    """
+
+    def _should_fall_back(self, error: BaseException) -> bool:
+        if isinstance(error, httpx.TimeoutException | httpx.ConnectError):
+            return True
+        return super()._should_fall_back(error)
+
+
+def _model() -> FallbackModel:
+    """Primary model with automatic failover to a second model.
+
+    Observed in testing: one Gemini model can stall, time out or return 504 for minutes while
+    another answers in seconds, and the network can drop a connection for a few seconds.
+    The primary gets a single attempt, so any failure (429/5xx, timeout, connection error)
+    moves straight to the fallback instead of waiting on a degraded model. The fallback is
+    retried once. A turn is never stitched together from two models.
     """
     settings = get_settings()
-    primary_retry = types.HttpRetryOptions(attempts=2, initial_delay=1.0, http_status_codes=[408])
-    return FallbackModel(
+    return _FailoverOnNetworkErrors(
         models=[
-            Gemini(model=settings.gemini_model, retry_options=primary_retry),
+            Gemini(model=settings.gemini_model, retry_options=types.HttpRetryOptions(attempts=1)),
             Gemini(
                 model=settings.gemini_fallback_model,
                 retry_options=types.HttpRetryOptions(attempts=2, initial_delay=1.0, max_delay=5.0),

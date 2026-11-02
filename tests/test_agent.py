@@ -2,7 +2,10 @@ from datetime import datetime
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
+import httpx
+import pytest
 from google.adk.models import FallbackModel
+from google.genai import errors
 
 from mail_agent.agent import build_instruction, root_agent
 
@@ -39,16 +42,33 @@ def test_model_calls_have_timeout():
     assert root_agent.generate_content_config.http_options.timeout == 30_000
 
 
-def test_model_fails_over_to_a_second_model_on_server_errors():
+def test_model_fails_over_to_a_second_model():
     model = root_agent.model
     assert isinstance(model, FallbackModel)
     primary, fallback = model.models
     assert primary.model == "gemini-3.5-flash"
     assert fallback.model == "gemini-3.5-flash-lite"
-    # Network blips are retried on the primary; error statuses go straight to the fallback.
-    assert primary.retry_options.attempts == 2
-    assert primary.retry_options.http_status_codes == [408]
-    assert {429, 503, 504} <= set(model.retriable_status_codes)
+    assert primary.retry_options.attempts == 1  # never wait on a degraded primary
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx.ReadTimeout("no reply"),
+        httpx.ConnectError("network down"),
+        errors.ServerError(504, {"error": {"code": 504, "message": "m"}}),
+        errors.ClientError(429, {"error": {"code": 429, "message": "m"}}),
+    ],
+)
+def test_fails_over_on_timeouts_network_errors_and_server_statuses(error):
+    assert root_agent.model._should_fall_back(error)
+
+
+def test_does_not_fail_over_on_bad_requests_or_bugs():
+    assert not root_agent.model._should_fall_back(
+        errors.ClientError(400, {"error": {"code": 400, "message": "m"}})
+    )
+    assert not root_agent.model._should_fall_back(ValueError("bug"))
 
 
 def test_send_flow_requires_a_separate_confirmation_turn():

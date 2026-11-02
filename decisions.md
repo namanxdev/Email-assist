@@ -228,3 +228,12 @@ Status: Accepted (supersedes the model choice in D-22)
 Context: Twenty minutes after D-22, `gemini-3.5-flash-lite` and `gemini-flash-lite-latest` started returning 504 on most calls (one success at 25 s), while `gemini-3.5-flash` answered in 1.9-3.4 s. Model availability on the Gemini API changes minute to minute. Separately, in a real session the model went straight from "send an email to X" to `send_email`, skipping the in-chat draft; only the native approval gate (D-06) stopped it. Also found: the API rejects deadlines under 10 s (400 INVALID_ARGUMENT).
 Decision: Use ADK's built-in `FallbackModel`: primary `gemini-3.5-flash` (no retries, so a degraded model is abandoned fast), fallback `gemini-3.5-flash-lite` (one retry), switching on 429/500/502/503/504. Timeout 30 s per call, clamped to at least 10 s. The instruction now forbids calling `send_email`/`reply_to_email` in the same turn as the request: the draft ends with "Send it?" and only a "yes" in the next message proceeds.
 Consequences: Verified with the real API: a failing primary logged "falling back to the next model"; a send request returned a draft and zero tool calls (5.8 s). FallbackModel is experimental in ADK 2.13 and never switches models mid-response. If both models are down the turn ends with a clear error, not a hang.
+
+## D-26: Fail over on timeouts and connection errors too
+
+Date: 2026-11-02
+Status: Accepted (refines D-25)
+
+Context: In a live session the primary hit our 30 s limit as a client-side `httpx.ReadTimeout`, and a minute earlier a `ConnectError`. Neither carries an HTTP status, and ADK's `FallbackModel` only fails over on status codes, so both errors reached the user while the fallback model sat unused.
+Decision: Subclass `FallbackModel` (`_FailoverOnNetworkErrors`) so `httpx.TimeoutException` and `httpx.ConnectError` also move to the next model. The primary gets a single attempt; the fallback is retried once. Failing over a model call is safe because `generateContent` has no side effects, and FallbackModel never switches after output has started, so tools are not re-run.
+Consequences: Verified through FallbackModel's real code path with stub models (primary raises ReadTimeout, backup answers) and live (primary 429, fallback finished the turn in 2.6 s). Overrides a private ADK method (`_should_fall_back`); tests pin the behaviour so an ADK upgrade that changes it fails loudly.
