@@ -75,3 +75,68 @@ def test_msal_constructed_with_authority_and_no_reserved_scopes(monkeypatch):
     assert ctor.call_args.args == ("client-123",)
     assert ctor.call_args.kwargs["authority"] == "https://login.microsoftonline.com/common"
     assert not {"offline_access", "openid", "profile"} & set(config.GRAPH_SCOPES)
+
+
+def test_login_prints_message_saves_cache_and_never_prints_token(monkeypatch, capsys, tmp_path):
+    app = _fake_app(
+        monkeypatch,
+        initiate_device_flow=MagicMock(return_value={"user_code": "ABC", "message": "Go to URL"}),
+        acquire_token_by_device_flow=MagicMock(
+            return_value={
+                "access_token": "secret-token",
+                "id_token_claims": {"preferred_username": "me@x.com"},
+            }
+        ),
+    )
+    auth.login()
+    out = capsys.readouterr().out
+    assert "Go to URL" in out
+    assert "Signed in as me@x.com" in out
+    assert "secret-token" not in out
+    app.initiate_device_flow.assert_called_once_with(scopes=["User.Read", "Mail.Read", "Mail.Send"])
+
+
+def test_login_fails_when_device_flow_cannot_start(monkeypatch):
+    _fake_app(
+        monkeypatch,
+        initiate_device_flow=MagicMock(return_value={"error_description": "bad client id"}),
+    )
+    with pytest.raises(RuntimeError, match="bad client id"):
+        auth.login()
+
+
+def test_login_fails_when_token_not_granted(monkeypatch):
+    _fake_app(
+        monkeypatch,
+        initiate_device_flow=MagicMock(return_value={"user_code": "A", "message": "m"}),
+        acquire_token_by_device_flow=MagicMock(return_value={"error_description": "declined"}),
+    )
+    with pytest.raises(RuntimeError, match="declined"):
+        auth.login()
+
+
+def test_logout_removes_accounts_and_cache_file(monkeypatch, capsys):
+    config.TOKEN_CACHE_PATH.write_text("{}", encoding="utf-8")
+    app = _fake_app(monkeypatch, get_accounts=MagicMock(return_value=["acct1", "acct2"]))
+    auth.logout()
+    assert [c.args[0] for c in app.remove_account.call_args_list] == ["acct1", "acct2"]
+    assert not config.TOKEN_CACHE_PATH.exists()
+    assert "Signed out" in capsys.readouterr().out
+
+
+def test_cache_is_written_only_when_state_changed(monkeypatch):
+    cache = MagicMock(has_state_changed=False)
+    auth._save_cache(cache)
+    assert not config.TOKEN_CACHE_PATH.exists()
+    cache = MagicMock(has_state_changed=True)
+    cache.serialize.return_value = '{"k": 1}'
+    auth._save_cache(cache)
+    assert config.TOKEN_CACHE_PATH.read_text(encoding="utf-8") == '{"k": 1}'
+
+
+def test_main_reports_errors_without_traceback(monkeypatch):
+    monkeypatch.delenv("MS_CLIENT_ID")
+    monkeypatch.setattr("sys.argv", ["auth", "login"])
+    with pytest.raises(SystemExit) as exc:
+        auth.main()
+    assert "MS_CLIENT_ID" in str(exc.value)
