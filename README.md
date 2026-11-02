@@ -81,7 +81,7 @@ Edit `.env` in the repo root (ADK walks up from the agent folder to find it):
 ## Sign in
 
 ```bash
-uv run python -m mail_agent.auth login
+uv run mail-login
 ```
 
 You will see Microsoft's device code message (illustrative output):
@@ -95,7 +95,7 @@ Signed in as you@example.com
 Open the URL, enter the code, sign in, and approve the three permissions. The token cache is saved to `token_cache.json`. After that, tokens refresh silently; you only repeat this if the refresh token expires or you log out.
 
 ```bash
-uv run python -m mail_agent.auth logout    # deletes the cached account and tokens
+uv run mail-logout    # deletes the cached account and tokens
 ```
 
 If you ask the agent something before signing in, it replies with the login command instead of failing.

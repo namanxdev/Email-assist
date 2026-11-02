@@ -1,13 +1,14 @@
 """MSAL device-code login, token cache, and `get_access_token()` for the Graph client."""
 
 import argparse
+from collections.abc import Callable
 from pathlib import Path
 
 import msal
 
 from . import config
 
-NOT_SIGNED_IN = "Not signed in. Run: uv run python -m mail_agent.auth login"
+NOT_SIGNED_IN = "Not signed in. Run: uv run mail-login"
 
 
 class AuthRequired(Exception):
@@ -91,14 +92,28 @@ def get_access_token(force_refresh: bool = False) -> str:
     return result["access_token"]
 
 
+def _run(command: Callable[[], None]) -> None:
+    try:
+        command()
+    except (AuthRequired, RuntimeError) as exc:
+        raise SystemExit(f"Error: {exc}") from exc
+
+
+def login_cli() -> None:
+    """Entry point for `uv run mail-login`."""
+    _run(login)
+
+
+def logout_cli() -> None:
+    """Entry point for `uv run mail-logout`."""
+    _run(logout)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m mail_agent.auth")
     parser.add_argument("command", choices=["login", "logout"])
     args = parser.parse_args()
-    try:
-        {"login": login, "logout": logout}[args.command]()
-    except (AuthRequired, RuntimeError) as exc:
-        raise SystemExit(f"Error: {exc}") from exc
+    _run({"login": login, "logout": logout}[args.command])
 
 
 if __name__ == "__main__":

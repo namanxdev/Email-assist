@@ -33,7 +33,7 @@ def test_no_accounts_raises_auth_required_with_exact_message(monkeypatch):
     _fake_app(monkeypatch, get_accounts=MagicMock(return_value=[]))
     with pytest.raises(auth.AuthRequired) as exc:
         auth.get_access_token()
-    assert str(exc.value) == "Not signed in. Run: uv run python -m mail_agent.auth login"
+    assert str(exc.value) == "Not signed in. Run: uv run mail-login"
 
 
 def test_silent_success_returns_token(monkeypatch):

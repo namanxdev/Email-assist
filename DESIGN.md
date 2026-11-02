@@ -27,7 +27,7 @@ A professional gets dozens of emails a day. They want to ask in plain language, 
 ## User flow
 
 1. Setup (once): register an Azure app, `uv sync`, fill `.env`.
-2. Login (once): `uv run python -m mail_agent.auth login`, enter the device code in a browser, tokens cached locally.
+2. Login (once): `uv run mail-login`, enter the device code in a browser, tokens cached locally.
 3. Ask: user starts `adk web` and types a question.
 4. Retrieve: the agent picks a tool (`list_emails`, `search_emails`, `get_email`), which calls Graph with a token from `auth.py`.
 5. Answer: the agent summarizes, citing sender, subject and date. If nothing matches it says so.
