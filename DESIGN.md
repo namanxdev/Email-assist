@@ -78,6 +78,7 @@ Difficulty: Green = straightforward, Yellow = a known Graph or ADK pitfall, hand
 | Name to address resolution | `find_contact` | Yellow | `$search "participants:<name>"`, dedupe by address, the user's own address excluded; never guesses. 0 matches: ask for the address; more than 1: ask the user to choose |
 | Send with confirmation | `send_email` | Yellow | `POST /me/sendMail`; two gates (chat draft plus ADK tool confirmation) |
 | Reply with confirmation | `reply_to_email` | Yellow | `POST /me/messages/{id}/reply`; same two gates |
+| Streaming responses | `adk web` Streaming toggle (SSE) | Green | `FallbackModel` streams; failover happens only before the first chunk; the approval gate pauses the same way. Tested through ADK's `Runner` with `StreamingMode.SSE` |
 | Relative dates and timezones | instruction provider | Green | Current date, weekday, time, yesterday and tomorrow injected every turn in `USER_TIMEZONE` |
 | Throttling and token expiry | `graph_client` | Green | `Retry-After` honored, 401 refresh-once |
 | Prompt-injection resistance | instruction, tool surface, send gate | Red | No model-level guarantee exists; see Key decisions |

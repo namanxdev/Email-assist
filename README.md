@@ -110,6 +110,8 @@ uv run adk web                  # open http://localhost:8000 and pick "mail_agen
 uv run adk run mail_agent       # terminal chat
 ```
 
+Streaming is supported. In `adk web`, turn on the Streaming toggle to see answers appear as they are generated (SSE). Failover and the send approval below behave the same with streaming on or off (covered by `tests/test_streaming.py`). `adk run` has no streaming option in ADK 2.13; it prints each reply when it is complete.
+
 Sending is gated twice. The agent first shows you a To / Subject / Body draft in chat and waits for an explicit "yes". Then ADK pauses the send tool and asks for approval of the exact arguments (recipient address included): a confirmation dialog in `adk web`, a prompt in `adk run`. The email is only sent if you approve there. If you reject, nothing is sent.
 
 ## Example prompts
@@ -162,6 +164,7 @@ README.md  DESIGN.md  decisions.md  scale.md
 - No attachments (read or send). Bodies are plain text only.
 - Sessions are stored locally (`adk web` in ADK 2.x uses SQLite at `mail_agent/.adk/session.db`, gitignored), and the agent serves a single user.
 - ADK's native tool confirmation is an experimental feature; its API may change between ADK releases.
+- With streaming on, the backup model is only used if the primary fails before its first chunk. If a stream breaks partway, the turn ends with an error instead of being finished by a second model; ask again.
 - No drafts in Outlook: `Mail.ReadWrite` is deliberately not requested, so drafts exist only in the chat.
 
 Next steps (multi-user hosting, large mailboxes, change notifications) are in [scale.md](scale.md). Trade-offs are in [DESIGN.md](DESIGN.md) and [decisions.md](decisions.md).

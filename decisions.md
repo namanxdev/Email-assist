@@ -218,7 +218,7 @@ Status: Superseded by D-25 and D-26
 
 Context: With no client timeout, one stalled model call blocked the whole turn for minutes. Separately, ADK 2.13's `adk web` stores sessions in SQLite, not in memory as first assumed, and native confirmation is documented as unsupported on `DatabaseSessionService`.
 Decision: `generate_content_config.http_options` sets `timeout` (`GEMINI_TIMEOUT_SECONDS`, default 60) and `retry_options(attempts=3, initial_delay=2, max_delay=10)`; google-genai retries timeouts, 408, 429 and 5xx. We ran an end-to-end check with the real model, `SqliteSessionService` and a fake send tool: no send before approval, none after reject, exactly one after approve.
-Consequences: Worst case a turn fails in about 3 minutes with a clear error instead of hanging. Streaming (the `adk web` toggle) improves perceived latency of the final answer only; it does not shorten time-to-first-token or tool-call steps, so it is a UI preference, not a fix.
+Consequences: Worst case a turn fails in about 3 minutes with a clear error instead of hanging. Streaming (the `adk web` toggle) improves perceived latency of the final answer only; it does not shorten time-to-first-token or tool-call steps, so it is a UI preference, not a fix. (Streaming support is verified and tested in D-29.)
 
 ## D-25: Primary gemini-3.5-flash with automatic fallback; draft-first enforced by a separate turn
 
@@ -255,4 +255,13 @@ Status: Accepted (refines D-13)
 Context: `participants:<name>` matches every message the user sent or received with that person, so the user's own address is in almost every result. Searching for a name the user shares (or part of their own address) returned the user as a candidate, which adds a wrong choice to the "which one?" question and could lead to a draft addressed to the user.
 Decision: `find_contact` drops every address that matches a `username` in the MSAL token cache, compared case-insensitively. `auth.signed_in_addresses()` reads the accounts straight from `token_cache.json` (no MSAL app, no client id, no network) and never raises: it returns an empty set when `GRAPH_BEARER_TOKEN` is set, when there is no cache, or when the cache is unreadable. In those cases nothing is filtered.
 Consequences: Cleaner candidate lists with no extra Graph call (no `GET /me`). With a bearer token the user's own address can still appear; the in-chat draft and the approval dialog (D-06) still show the final address. An account whose sending address differs from its sign-in username (for example an alias) is not filtered.
+
+## D-29: Streaming (SSE) supported in adk web, verified with the real agent configuration
+
+Date: 2026-11-02
+Status: Accepted
+
+Context: `adk web` has a Streaming toggle that runs the agent with `RunConfig(streaming_mode=StreamingMode.SSE)`, so answers appear as they are generated. Three parts of this agent could behave differently under streaming: the failover subclass (D-26), the per-call timeout, and native tool confirmation (D-06). The ADK confirmation docs list only `DatabaseSessionService` and `VertexAiSessionService` as unsupported, nothing about streaming. `adk run` has no streaming option in ADK 2.13.
+Decision: Allow streaming with no code change to the agent, and pin the behaviour with tests (`tests/test_streaming.py`) that run the real `root_agent` (instruction, tools, failover, confirmation) through ADK's `InMemoryRunner` in SSE mode, with only the Gemini models replaced by scripted stubs. The tests check that the model is called with `stream=True` and partial text events arrive before the final answer; that a timeout before the first chunk fails over to the backup model, which then streams; that a failure after the first chunk raises and the backup is not called (FallbackModel never stitches a turn from two models); and that a streamed `send_email` call pauses for `adk_request_confirmation`, sends nothing on reject, and sends exactly the drafted message once on approve.
+Consequences: Streaming is a supported mode, not just a UI preference that might break the agent. The trade-off: once a stream has started, a mid-response failure ends the turn with an error instead of failing over (documented in the README). `GEMINI_TIMEOUT_SECONDS` is also sent to the server as its deadline (`X-Server-Timeout`), so a streamed answer must finish within it; this agent's answers are short. The tests touch ADK's experimental FallbackModel and confirmation paths, so an ADK upgrade that changes them fails loudly.
 
