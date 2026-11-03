@@ -40,7 +40,6 @@ Thumbs.db
 .adk/
 
 # Local design notes (kept on disk, not tracked)
-DESIGN.md
 decisions.md
 scale.md
 scale-10k.md

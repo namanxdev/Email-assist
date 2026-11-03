@@ -4,6 +4,8 @@ A local email assistant built with Google ADK (Python) and Microsoft Graph. It r
 
 It runs on your machine (`adk web` or `adk run`). Sign-in uses the standard OAuth authorization code flow with PKCE in your browser (MSAL listens on `http://localhost`), so there is no client secret. Tokens stay in a local, gitignored cache file.
 
+Design choices, trade-offs and scale-up plan: see DESIGN.md.
+
 ## Architecture
 
 ```mermaid
