@@ -4,8 +4,6 @@ A local email assistant built with Google ADK (Python) and Microsoft Graph. It r
 
 It runs on your machine (`adk web` or `adk run`). Sign-in uses the standard OAuth authorization code flow with PKCE in your browser (MSAL listens on `http://localhost`), so there is no client secret. Tokens stay in a local, gitignored cache file.
 
-For the reasoning behind the design see [DESIGN.md](DESIGN.md), [decisions.md](decisions.md) and [scale.md](scale.md).
-
 ## Architecture
 
 ```mermaid
@@ -70,7 +68,7 @@ Edit `.env` in the repo root (ADK walks up from the agent folder to find it):
 | Variable | Required | Meaning |
 |---|---|---|
 | `GOOGLE_API_KEY` | yes | Gemini API key |
-| `GEMINI_MODEL` | no | Primary model. Defaults to `gemini-3.5-flash` (decisions.md D-22, D-25) |
+| `GEMINI_MODEL` | no | Primary model. Defaults to `gemini-3.5-flash` |
 | `GEMINI_FALLBACK_MODEL` | no | Used automatically on 429/5xx/timeout. Defaults to `gemini-3.5-flash-lite` |
 | `GEMINI_TIMEOUT_SECONDS` | no | Per model call, minimum 10 (API limit). Defaults to 30 |
 | `MS_CLIENT_ID` | yes (unless bearer token) | Application (client) ID from the registration |
@@ -150,8 +148,7 @@ mail_agent/
   config.py        # env loading
   models.py        # TypedDicts for email data
 tests/             # no __init__.py on purpose, so adk web lists only mail_agent
-README.md  DESIGN.md  decisions.md  scale.md
-.env.example  pyproject.toml
+README.md  .env.example  pyproject.toml
 ```
 
 ## Limitations and next steps
@@ -166,8 +163,6 @@ README.md  DESIGN.md  decisions.md  scale.md
 - ADK's native tool confirmation is an experimental feature; its API may change between ADK releases.
 - With streaming on, the backup model is only used if the primary fails before its first chunk. If a stream breaks partway, the turn ends with an error instead of being finished by a second model; ask again.
 - No drafts in Outlook: `Mail.ReadWrite` is deliberately not requested, so drafts exist only in the chat.
-
-Next steps (multi-user hosting, large mailboxes, change notifications) are in [scale.md](scale.md). Trade-offs are in [DESIGN.md](DESIGN.md) and [decisions.md](decisions.md).
 
 ## Troubleshooting
 
