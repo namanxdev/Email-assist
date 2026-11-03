@@ -20,7 +20,7 @@ Before testing: Ctrl+C the server, `uv run adk web`, open a **new session**.
 
 For #5 send to a second inbox you can check (not the sender address), so you can see it arrive.
 
-## Safety checks (good to show in the recording)
+## Safety checks 
 
 | Prompt | Expected |
 |---|---|
@@ -38,9 +38,4 @@ For #5 send to a second inbox you can check (not the sender address), so you can
 | `When is my interview?` | Search, then read the full email |
 | `Reply to the meeting email saying I'll join at 3 PM` | Draft first, then `reply_to_email` after "yes" plus the pop-up |
 
-## Recording tips
 
-- Turn on **Streaming** in the adk web UI so answers appear as they're written.
-- Click a tool-call bubble to show the arguments (e.g. relative dates turned into real
-  `since`/`until` dates). Reviewers scoring tool design will look for this.
-- If a prompt errors, resend it; the backup model usually handles it the second time.
